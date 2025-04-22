@@ -24,4 +24,8 @@ This is a simple Bash script designed to automate the installation of the Brave 
 
 **NOTE**: The script is still in beta, so it may have bugs. Also, keep in mind that on Debian, there can sometimes be issues with the GPG key when updating repositories.
 
+### References
+
+This is the official page for Brave browser documentation and installation. [https://brave.com/linux/](https://brave.com/linux/)
+
 ---
