@@ -1,0 +1,120 @@
+#!/usr/bin/bash
+
+# color list
+RED="\e[01;31m"; GRN="\e[01;32m"; YLL="\e[01;33m";
+BLU="\e[01;34m"; END="\e[00m"
+
+# receives an error message as a argument, displays it to stdout, and exits with exit code 1
+errorMessage(){
+  local message="$1"
+
+  echo -e "\n${RED}[ERROR]${END} $message\n"
+  exit 1
+}
+
+# checks the exit status code of the command execution to determine if it was successful or if there weas an error
+exit_code(){
+  local code="$1"
+  local msg="$2"
+
+  if [[ "$code" -ne 0 ]]; then
+    echo -e "${RED}Failed${END}"
+    errorMessage "$msg"
+  else
+    echo -e "${GRN}Ok${END}"
+  fi
+}
+
+install_packages(){
+  local packages_manager="$1"
+  local list_packages="$2"
+
+  for package in $list_packages; do
+    echo -en "${YLL}installing${END} the $package package "
+    $packages_manager install -y $package &>/dev/null
+    exit_code "$?" "$package package could not be install"
+  done
+}
+
+install_deb(){
+  local dependencies='curl apt-transport-https'
+
+  echo -en "${GRN}[*]${END} synchronizing repositories.... "
+  apt update &>/dev/null
+  exit_code "$code" "an error occurred while synchronizing the repositories"
+  
+  install_packages 'apt' "$dependencies"
+
+  # Add key GPG
+  echo -en "${BLU}[*]${END} adding key GPG.... "
+  
+  curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+  
+  exit_code "$?" "failed to add GPG key"
+
+  # Add the repository
+  echo -en "${BLU}[*]${END} adding repository.... "
+  echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg] https://brave-browser-apt-release.s3.brave.com/ stable main" | tee /etc/apt/sources.list.d/brave-browser-release.list &>/dev/null
+
+  exit_code "$?" "could not add repository"
+
+  install_packages 'apt' 'brave-browser'
+
+  echo -en "${GRN}[*]${END} synchronizing repositories.... "
+  apt update &>/dev/null
+  exit_code "$code" "an error occurred while synchronizing the repositories"
+
+  echo -e "\n${GRN}brave-browser${END} has been installed\n"
+}
+
+install_rpm(){
+  local dependencies='dnf-plugins-core'
+
+  echo -en "${GRN}[*]${END} synchronizing repositories.... "
+  dnf makecache &>/dev/null
+  exit_code "$code" "an error occurred while synchronizing the repositories"
+
+  install_packages 'dnf' "$dependencies"
+
+  # Add the repository
+  echo -en "${BLUE}[*]${END} adding repository.... "
+  dnf config-manager addrepo --from-repofile=https://brave-browser-rpm-release.s3.brave.com/brave-browser.repo &>/dev/null
+  exit_code "$?" "could not add repository"
+
+  echo -en "${GRN}[*]${END} synchronizing repositories.... "
+  dnf makecache &>/dev/null
+  exit_code "$code" "an error occurred while synchronizing the repositories"
+
+  install_packages 'dnf' "brave-browser"
+
+  echo -e "\n${GRN}brave-browser${END} has been installed\n"
+}
+
+
+# checks that the script is run as root/sudo
+if [[ $(id -u) -ne 0 ]]; then
+  errorMessage "root/sudo privileges are required to install the Brave Browser"
+fi
+
+# Before proceeding, check that brave browser is not installed, otherwise exit
+if [[ -n "$(which brave-browser)" ]]; then
+  echo -e "\nThe ${GRN}brave-browser${END} is already installed\n"
+  exit 0
+fi
+
+# Checks that the installed distribution is Debian or its derivatives, as well as some Red Hat derivatives like
+# Fedora, CentOS, or Almalinux
+deb_dist="debian ubuntu linuxmint"
+rpm_dist="fedora centos almalinux"
+
+get_dist="$(awk -F '=' '/^ID=/ {print $2}' /etc/os-release)"
+echo -e "${BLU}[*]${END} $get_dist is the current distribution"; sleep 1
+
+if [[ $deb_dist =~ ${get_dist,,} ]]; then
+  install_deb
+elif [[ $rpm_dist =~ ${get_dist,,} ]]; then
+  install_rpm
+else
+  errorMessage "distribution $get_dist is not supported"
+fi
+
